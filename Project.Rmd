@@ -90,4 +90,6 @@ Create an app to allow users to play [Six Degrees of Kevin Bacon](https://en.wik
 
 Create a Shiny application where a person can type the primary title of movie or TV show. Then have app show all the people who had a role in the show. Let the user select a person in that cast and show all other people who have been in a title with that person. Repeat up to 6 times. If "Kevin Bacon" (`nconst == 'nm0000102'`) ever appears in the list, let the player know they have won! If they click more than 6 times, let them know they have lost.
 
+```{r, code=readLines("bacon_app.R"), eval=FALSE}
+```
 
