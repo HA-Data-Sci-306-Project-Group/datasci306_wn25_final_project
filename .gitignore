@@ -1,4 +1,13 @@
-.Rhistory
-.Rproj.user/
-*.html
-*_cache
+*.gz
+*.rda
+
+#.Rhistory
+#.Rproj.user/
+#*.html
+#*_cache
+
+# This was what was originally in the file 
+# *.gz
+# This is what I added 
+# *.rda
+# IDK why it changed to the stuff that's written lines 1-4
