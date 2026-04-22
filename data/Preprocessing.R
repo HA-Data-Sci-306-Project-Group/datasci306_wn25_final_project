@@ -13,73 +13,53 @@
 #* 
 
 library(readr)
+library(dplyr)
 
 preprocess <- function(table, data_dir = "data") {
-  filepath <- file.path("data", paste0(table, ".csv.gz"))
+  filepath <- file.path(data_dir, paste0(table, ".csv.gz"))
   
-  if (!fs::file_exists(filepath)) {
+  if (!file.exists(filepath)) {
     stop("File not found: ", filepath)
   }
   
-  df <- read_csv(
-    filepath,
-    na = "\\N",      # converts IMDB missing values to NA
-    show_col_types = FALSE
-  )
-  
-  
-  return(df)
+  read_csv(filepath, na = "\\N", show_col_types = FALSE)
 }
-
-# Applying function on all of the `*_sample.csv.gz`
-# data_dir <- "data"
-# 
-# sample_paths <- fs::dir_ls(
-#   data_dir,
-#   regexp = "_sample\\.csv\\.gz$",
-#   type = "file"
-# )
-# 
-# for (p in sample_paths) {
-#   stub <- sub("\\.csv\\.gz$", "", fs::path_file(p))  # e.g. "title_basics_sample"
-#   tbl  <- preprocess(stub, data_dir = data_dir)
-#   readr::write_rds(tbl, fs::path(data_dir, paste0(stub, ".rda")))
-# }
-
 
 files <- list.files("data", pattern = "_sample\\.csv\\.gz$", full.names = FALSE)
 
 for (f in files) {
   name <- sub("\\.csv\\.gz$", "", f)
-  
-  df <- preprocess(name)
-  
+  df <- preprocess(name, data_dir = "data")
   write_rds(df, file.path("data", paste0(name, ".rda")))
 }
 
 # Will be used later 
 # title_basics_sample <- readr::read_rds("data/title_basics_sample.rda")
 
-# Checking if the above function and part 1 of the project works 
-tb <- preprocess("title_basics_sample") 
-glimpse(tb)
-dim(tb)
-names(tb)
+
+# Checking if the above function and part 1 of the project works. 
+# We can delete this before submitting 
+
+# Checks with this one file
+#tb <- preprocess("title_basics_sample") 
+#glimpse(tb)
+#dim(tb)
+#names(tb)
+
+# count NAs per column
+#colSums(is.na(tb))
+
+# look for any remaining literal "\N" in character columns
+#char_cols <- tb |> select(where(is.character))
+#any(grepl("^\\\\N$", unlist(char_cols), fixed = FALSE), na.rm = TRUE)
+
+#Looks in the rows 
+#tb |> filter(if_any(everything(), is.na)) |> slice_head(n = 10)
 
 
-# Applying function to each of .csvgz and using write_rds function. 
-# This is the manual way to doing it without the loop above 
-# name_basics <- preprocess("name_basics_sample")
-# write_rds(name_basics, "name_basics_sample.rda")
-# 
-# title_basics <- preprocess("titles_basics_sample")
-# write_rds(title_basics, "titles_basics_sample.rda")
-# 
-# title_principals <- preprocess("titles_principals_sample")
-# write_rds(title_principals, "titles_principals_sample.rda")
-# 
-# title_ratings <- preprocess("titles_ratings_sample")
-# write_rds(title_ratings, "titles_ratings_sample.rda")
+
+
+
 
 
                                                                                                                                                                                        
