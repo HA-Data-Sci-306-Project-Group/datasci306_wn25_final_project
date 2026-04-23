@@ -8,6 +8,9 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(ggplot2)
+library(readr)
+library(scales)
 ```
 
 ## Investigating the Internet Movie Database (IMDB)
@@ -34,8 +37,106 @@ The [Internet Movie Database (IMDb)]() contains information on millions of movie
 
 * For each of the 4 tables, perform basic exploratory data analysis. Report the following information:
   * For each quantitative column, provide some summary statistics
+  
+```{r}
+# For each quantitative column, provide some summary statistics
+#loading in tables 
+title_basics  <- read_rds("data/title_basics_sample.rda")
+title_ratings <- read_rds("data/title_ratings_sample.rda")
+name_basics   <- read_rds("data/name_basics_sample.rda")
+title_principals    <- read_rds("data/title_principals_sample.rda")
+
+# summarize function 
+summarize_numeric <- function(table) {
+  table |>
+    select(where(is.numeric)) |>
+    summary()
+}
+
+summarize_numeric(title_basics)
+summarize_numeric(title_ratings)
+summarize_numeric(name_basics)
+summarize_numeric(title_principals)
+```
+  
+  
+  
   * For any character columns, decided if they are actually representing factors/categorical data with a moderate number of columns. If so report the distributions for these variables.
+```{r}
+ char_distributions <- function(df, max_levels = 30, top_n = 15) {
+  chr <- df |> select(where(is.character))
+  if (ncol(chr) == 0) return(list())
+  
+  map(names(chr), function(v) {
+    n_levels <- n_distinct(chr[[v]], na.rm = TRUE)
+    if (n_levels > 1 && n_levels <= max_levels) {
+      tab <- df |>
+        count(.data[[v]], sort = TRUE) |>
+        mutate(p = n / sum(n)) |>
+        slice_head(n = top_n)
+      list(var = v, n_levels = n_levels, top = tab)
+    } else {
+      NULL
+    }
+  }) |> compact()
+}
+
+char_distributions(title_basics)
+char_distributions(title_ratings)
+char_distributions(name_basics)
+char_distributions(title_principals)
+
+#Ella come back to this 
+
+```
+  
+  
+  
   * Provide a plot for each table. Across all of the plots, try to show off the most possible different ggplot features (`geoms_` functions, `stat_` functions, coordinate systems, facets, use of several variables, annotations)
+
+```{r}
+
+# # Plot for title_basics using facets, coordinate flip, and several variables
+# ggplot(title_basics, aes(x = titleType, y = runtimeMinutes, fill = isAdult)) +
+#   geom_boxplot(outlier.alpha = 0.2) +
+#   geom_jitter(aes(color = isAdult), width = 0.2, alpha = 0.2) +
+#   facet_wrap(~ genres, scales = "free_y") +
+#   coord_flip() +
+#   labs(
+#     title = "Runtime by Title Type and Genre",
+#     x = "Title Type",
+#     y = "Runtime (minutes)",
+#     fill = "Adult",
+#     color = "Adult"
+#   ) +
+#   theme_bw()
+
+# # Plot for title_ratings using stat_summary and annotations
+# ggplot(title_ratings, aes(x = averageRating, y = numVotes)) +
+#   geom_point(aes(color = rating_group), alpha = 0.3) +
+#   stat_smooth(method = "loess", se = FALSE, color = "black") +
+#   stat_summary_bin(
+#     fun = "mean",
+#     bins = 15,
+#     geom = "line",
+#     color = "red",
+#     linewidth = 1
+#   ) +
+#   scale_y_log10() +
+#   labs(
+#     title = "Ratings vs Popularity",
+#     subtitle = "Points, LOESS smooth, and binned mean",
+#     x = "Average Rating",
+#     y = "Number of Votes (log scale)",
+#     color = "Rating Group"
+#   ) +
+#   annotate("text", x = 8, y = 1e6, label = "Highly rated & popular", color = "blue") +
+#   theme_minimal()
+```
+
+  
+  
+  
 * For the `titles_basics` table
   * use two different variables to group and explore how `runtimeMinutes` varies for these different groups. Produce appropriate summaries.
   * How many titles are known for name that is different than the original release name?
@@ -50,11 +151,88 @@ The [Internet Movie Database (IMDb)]() contains information on millions of movie
 * Find all the actors with first names "Tom", "Thomas", "Thom" or "Tomas". How many are there?
 * How many titles use alliteration (i.e., all words in the title start with the same letter)?
 
+
 ## Part III: Pivoting
 
 * Create a new version of the `titles_basics` table that has one row for each title-genre combination. See the `separate_rows` function for a useful too here.
+```{r}
+# Create a new version of the titles_basics table with one row per title-genre combination
+  
+# R crashes when I try to run this code.
+
+# tb_genres_tall <- title_basics |>
+#   select(tconst, primaryTitle, startYear, genres) %>%
+#   filter(!is.na(genres), genres != "") %>%
+#   separate_rows(genres, sep = ",") %>%
+#   rename(genre = genres) %>%
+#   mutate(
+#     genre = str_trim(genre),
+#     startYear = as.integer(startYear)
+#   ) %>%
+#   filter(!is.na(genre), genre != "", !is.na(startYear))
+
+titles_genres <- title_basics %>%
+  filter(!is.na(genres)) %>%
+  separate_rows(genres, sep = ",") %>%
+  rename(genre = genres)
+```
+
+
 * Using that table, create a line plot of the count different genres over time (you may limit this to the most common genres if you wish).
+```{r}
+# Line plot of count of different genres over time
+genre_counts <- titles_genres |>
+  filter(!is.na(startYear)) |>
+  group_by(startYear, genre) |>
+  summarise(n = n(), .groups = "drop")
+
+top_genres <- titles_genres |>
+  count(genre, sort = TRUE) |>
+  slice_head(n = 8) |>
+  pull(genre)
+
+genre_counts_filtered <- genre_counts |>
+  filter(genre %in% top_genres)
+
+ggplot(genre_counts_filtered, aes(x = startYear, y = n, color = genre)) +
+  geom_line(linewidth = 1) +
+  geom_smooth(se = FALSE, linetype = "dashed") +
+  facet_wrap(~ genre, scales = "free_y") +
+  labs(
+    title = "Trends in Most Common Genres Over Time",
+    x = "Year",
+    y = "Number of Titles"
+  ) +
+  theme_minimal()
+```
+
 * Use the `model.matrix` function in the following way: `model.matrix(yourtalltable, ~ genre - 1)` to create a wide table with one column for each genre. Use this table to find the most common pair of genres (hint: use the `cor` function or produce facet plots)
+
+```{r}
+genre_matrix <- model.matrix(~ genre - 1, data = titles_genres)
+
+# One row per title 
+genre_wide <- as.data.frame(genre_matrix) |>
+  mutate(tconst = titles_genres$tconst) |>
+  group_by(tconst) |>
+  summarise(across(everything(), max), .groups = "drop")
+
+# Try first without filtering
+genre_cor <- cor(genre_matrix)
+
+# Trying with filtiering
+genre_cor <- cor(genre_wide %>% select(-tconst))
+
+# Set diagonal to NA so we ignore self-correlation
+diag(genre_cor) <- NA
+
+# Find max pair
+which(genre_cor == max(genre_cor, na.rm = TRUE), arr.ind = TRUE)
+
+# Indices back to column names
+colnames(genre_cor)[col_index]
+```
+
 
 ## Part IV: Joining Tables
 
