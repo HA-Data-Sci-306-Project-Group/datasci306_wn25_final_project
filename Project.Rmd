@@ -11,6 +11,7 @@ library(tidyverse)
 library(ggplot2)
 library(readr)
 library(scales)
+library(forcats)
 ```
 
 ## Investigating the Internet Movie Database (IMDB)
@@ -41,10 +42,10 @@ The [Internet Movie Database (IMDb)]() contains information on millions of movie
 ```{r}
 # For each quantitative column, provide some summary statistics
 #loading in tables 
-title_basics  <- read_rds("data/title_basics_sample.rda")
+title_basics <- read_rds("data/title_basics_sample.rda")
 title_ratings <- read_rds("data/title_ratings_sample.rda")
-name_basics   <- read_rds("data/name_basics_sample.rda")
-title_principals    <- read_rds("data/title_principals_sample.rda")
+name_basics  <- read_rds("data/name_basics_sample.rda")
+title_principals <- read_rds("data/title_principals_sample.rda")
 
 # summarize function 
 summarize_numeric <- function(table) {
@@ -95,42 +96,96 @@ char_distributions(title_principals)
   * Provide a plot for each table. Across all of the plots, try to show off the most possible different ggplot features (`geoms_` functions, `stat_` functions, coordinate systems, facets, use of several variables, annotations)
 
 ```{r}
+# Filtering the data so that it doesn't crash R
+small_title_basics <- title_basics |>
+  filter(
+    !is.na(runtimeMinutes),
+    runtimeMinutes > 0,
+    runtimeMinutes < 300,
+    titleType %in% c("movie", "tvSeries", "short")
+  )
 
-# # Plot for title_basics using facets, coordinate flip, and several variables
-# ggplot(title_basics, aes(x = titleType, y = runtimeMinutes, fill = isAdult)) +
-#   geom_boxplot(outlier.alpha = 0.2) +
-#   geom_jitter(aes(color = isAdult), width = 0.2, alpha = 0.2) +
-#   facet_wrap(~ genres, scales = "free_y") +
-#   coord_flip() +
-#   labs(
-#     title = "Runtime by Title Type and Genre",
-#     x = "Title Type",
-#     y = "Runtime (minutes)",
-#     fill = "Adult",
-#     color = "Adult"
-#   ) +
-#   theme_bw()
+# Plot for title_basics using facets, coordinate flip, and several variables
+plot1 <- small_title_basics |>
+  select(titleType, runtimeMinutes) |>              
+  filter(
+    !is.na(titleType),
+    !is.na(runtimeMinutes),
+    runtimeMinutes > 0,
+    runtimeMinutes < 300
+  ) |>
+  mutate(titleType = fct_lump_n(as.factor(titleType), 6)) |>
+  ggplot(aes(x = runtimeMinutes, fill = titleType)) +
+  geom_histogram(binwidth = 10, color = "white", alpha = 0.8) +
+  facet_wrap(~ titleType, scales = "free_y") +
+  coord_cartesian(xlim = c(0, 250)) +
+  labs(
+    title =  "Runtime Distribution by title type",
+    x = "Runtime (minutes)", y = "Count"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
 
-# # Plot for title_ratings using stat_summary and annotations
-# ggplot(title_ratings, aes(x = averageRating, y = numVotes)) +
-#   geom_point(aes(color = rating_group), alpha = 0.3) +
-#   stat_smooth(method = "loess", se = FALSE, color = "black") +
-#   stat_summary_bin(
-#     fun = "mean",
-#     bins = 15,
-#     geom = "line",
-#     color = "red",
-#     linewidth = 1
-#   ) +
-#   scale_y_log10() +
+plot1
+
+# Plot for title_ratings using 2D binning, log scale, and annotations. 
+# Use only first 200 rows so that R doesn't crash!
+small_title_ratings <- title_ratings |>
+  head(200) |>
+  select(averageRating, numVotes) |>
+  filter(!is.na(averageRating), !is.na(numVotes), numVotes > 0)
+
+k <- min(30000, nrow(small_title_ratings))
+small_title_ratings <- small_title_ratings[sample.int(nrow(small_title_ratings), k), ]
+
+p2 <- ggplot(small_title_ratings, aes(averageRating, numVotes)) +
+  geom_point(alpha = 0.2, size = 0.8, color = "steelblue") +
+  scale_y_log10(labels = label_number()) +
+  theme_minimal() + 
+  labs(
+    title = "Title Rating vs votes (log scale)",
+    x = "Average Title Rating",
+     y = "Number of votes (log10)",
+     fill = "Count"
+    ) 
+  # annotate(
+  #   "text", x = 3.5, y = 1e6,
+  #   label = "Scatterplot with log scale on y-axis",
+  #   size = 3, hjust = 0
+  # )
+
+p2
+
+# plot2 <- small_title_ratings |>
+#   select(averageRating, numVotes) |>
+#   ggplot(aes(x = averageRating, y = numVotes)) +
+#   stat_bin2d(bins = 60) +
+#   scale_y_log10(labels = label_number()) +
+#   scale_fill_viridis_c(trans = "log10", labels = label_number()) +
 #   labs(
-#     title = "Ratings vs Popularity",
-#     subtitle = "Points, LOESS smooth, and binned mean",
+#     title = "title_ratings: Rating vs votes (binned; log scale)",
+#     x = "Average rating",
+#     y = "Number of votes (log10)",
+#     fill = "Count"
+#   ) +
+#   theme_minimal() +
+#   annotate(
+#     "text", x = 3.5, y = 1e6,
+#     label = "2D binning avoids huge scatterplots",
+#     size = 3, hjust = 0
+#   )
+# plot2
+
+# plot2 <- title_ratings |>
+#   filter(!is.na(averageRating), !is.na(numVotes)) |>
+#   ggplot(aes(x = averageRating, y = numVotes)) +
+#   geom_point(alpha = 0.5) +
+#   geom_smooth(method = "loess", se = FALSE, color = "blue") +
+#   labs(
+#     title = "Average Rating vs Number of Votes",
 #     x = "Average Rating",
-#     y = "Number of Votes (log scale)",
-#     color = "Rating Group"
+#     y = "Number of Votes"
 #   ) +
-#   annotate("text", x = 8, y = 1e6, label = "Highly rated & popular", color = "blue") +
 #   theme_minimal()
 ```
 
