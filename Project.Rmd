@@ -47,6 +47,13 @@ title_ratings <- read_rds("data/title_ratings_sample.rda")
 name_basics  <- read_rds("data/name_basics_sample.rda")
 title_principals <- read_rds("data/title_principals_sample.rda")
 
+# title_basics row 40382 did not load in correctly, some cols are off by 1. Code below corrects this:
+title_basics[40382, ] <- list("tt12149332", "tvEpisode", "Jeopardy! College Championship Semifinal Game 3\tJeopardy! College Championship Semifinal Game 3", NA, 0, 2020, NA, NA, NA)
+
+# isAdult column for title_basics is a factor, not technically a quantitative variable
+title_basics$isAdult <- as.factor(title_basics$isAdult)
+
+
 # summarize function 
 summarize_numeric <- function(table) {
   table |>
@@ -89,6 +96,8 @@ char_distributions(title_principals)
 
 #Ella come back to this 
 
+
+# Probably want to separate factors from characters, then for factors you want to report the distribution of proportions for each of the levels, and for the characters probably ignore.
 ```
   
   
@@ -96,24 +105,20 @@ char_distributions(title_principals)
   * Provide a plot for each table. Across all of the plots, try to show off the most possible different ggplot features (`geoms_` functions, `stat_` functions, coordinate systems, facets, use of several variables, annotations)
 
 ```{r}
+
+# PLOT title_basics
+
+
 # Filtering the data so that it doesn't crash R
-small_title_basics <- title_basics |>
+title_basics |>
+  select(titleType, runtimeMinutes) |>
   filter(
     !is.na(runtimeMinutes),
+    !is.na(titleType),
     runtimeMinutes > 0,
     runtimeMinutes < 300,
     titleType %in% c("movie", "tvSeries", "short")
-  )
-
-# Plot for title_basics using facets, coordinate flip, and several variables
-plot1 <- small_title_basics |>
-  select(titleType, runtimeMinutes) |>              
-  filter(
-    !is.na(titleType),
-    !is.na(runtimeMinutes),
-    runtimeMinutes > 0,
-    runtimeMinutes < 300
-  ) |>
+  ) |>  # Plot for title_basics using facets, coordinate flip, and several variables
   mutate(titleType = fct_lump_n(as.factor(titleType), 6)) |>
   ggplot(aes(x = runtimeMinutes, fill = titleType)) +
   geom_histogram(binwidth = 10, color = "white", alpha = 0.8) +
@@ -126,35 +131,35 @@ plot1 <- small_title_basics |>
   theme_minimal() +
   theme(legend.position = "none")
 
-plot1
+
+
+
+# PLOT title_ratings
 
 # Plot for title_ratings using 2D binning, log scale, and annotations. 
 # Use only first 200 rows so that R doesn't crash!
 small_title_ratings <- title_ratings |>
-  head(200) |>
   select(averageRating, numVotes) |>
   filter(!is.na(averageRating), !is.na(numVotes), numVotes > 0)
 
 k <- min(30000, nrow(small_title_ratings))
 small_title_ratings <- small_title_ratings[sample.int(nrow(small_title_ratings), k), ]
 
-p2 <- ggplot(small_title_ratings, aes(averageRating, numVotes)) +
-  geom_point(alpha = 0.2, size = 0.8, color = "steelblue") +
-  scale_y_log10(labels = label_number()) +
+ggplot(title_ratings, aes(x = averageRating, y = numVotes)) +
+  stat_summary(fun = mean, geom = "line", linewidth = 0.5) +
+  scale_y_log10(labels = scales::label_number()) +
   theme_minimal() + 
   labs(
-    title = "Title Rating vs votes (log scale)",
+    title = "Average Votes by Title Rating (log scale)",
     x = "Average Title Rating",
-     y = "Number of votes (log10)",
-     fill = "Count"
-    ) 
+    y = "Average number of votes (log10)"
+  )
   # annotate(
   #   "text", x = 3.5, y = 1e6,
   #   label = "Scatterplot with log scale on y-axis",
   #   size = 3, hjust = 0
   # )
 
-p2
 
 # plot2 <- small_title_ratings |>
 #   select(averageRating, numVotes) |>
@@ -187,6 +192,45 @@ p2
 #     y = "Number of Votes"
 #   ) +
 #   theme_minimal()
+
+
+
+
+# PLOT title_principals
+
+title_principals %>%
+  select(ordering, category) %>%
+  filter(!is.na(ordering), !is.na(category)) %>%
+  ggplot(aes(x = ordering)) +
+  stat_count(aes(y = after_stat(prop), group = 1)) +
+  facet_wrap(~ category) +
+  labs(
+    title = "Ordering of Name on Credits by Role",
+    y = "Proportion",
+    x = "Position in Credits"
+  )
+
+
+
+# PLOT name_basics
+
+name_basics %>%
+  select(primaryProfession, birthYear, deathYear) %>%
+  filter(!is.na(birthYear), !is.na(deathYear), !is.na(primaryProfession)) %>%
+  mutate(lifespan = deathYear - birthYear) %>%
+  separate_rows(primaryProfession, sep = ",") %>%
+  group_by(primaryProfession) %>%
+  filter(n() >= 100) %>%
+  summarise(avg_lifespan = mean(lifespan, na.rm = TRUE), .groups = "drop") %>%
+  ggplot(aes(x = reorder(primaryProfession, avg_lifespan), y = avg_lifespan)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Average Lifespan by Profession",
+    x = "Profession",
+    y = "Average Lifespan"
+  ) +
+  theme_minimal()
 ```
 
   
@@ -194,7 +238,22 @@ p2
   
 * For the `titles_basics` table
   * use two different variables to group and explore how `runtimeMinutes` varies for these different groups. Produce appropriate summaries.
+  
+```{r}
+title_basics %>%
+  group_by(titleType, isAdult) %>%
+  summarize(mean_runtime = mean(runtimeMinutes, na.rm = TRUE), sd_runtime = sd(runtimeMinutes, na.rm = TRUE))
+  
+```
+  
   * How many titles are known for name that is different than the original release name?
+  
+```{r}
+title_basics %>%
+  select(primaryTitle, originalTitle) %>%
+```
+  
+  
   * Graph the conditional distributions of release year based on the previous results. Comment on any trends you observe.
 * For the ratings, use the `cut` function to break the data into three groups based on the average ratings. Are higher rated titles rated more often or less often than lower rated titles? 
 * For the names table, 
@@ -205,6 +264,10 @@ p2
       * Do the same for living cast members.
 * Find all the actors with first names "Tom", "Thomas", "Thom" or "Tomas". How many are there?
 * How many titles use alliteration (i.e., all words in the title start with the same letter)?
+
+```{r}
+title_basics
+```
 
 
 ## Part III: Pivoting
