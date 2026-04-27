@@ -12,6 +12,7 @@ library(ggplot2)
 library(readr)
 library(scales)
 library(forcats)
+library(profvis)
 ```
 
 ## Investigating the Internet Movie Database (IMDB)
@@ -94,7 +95,6 @@ char_distributions(title_ratings)
 char_distributions(name_basics)
 char_distributions(title_principals)
 
-#Ella come back to this 
 
 
 # Probably want to separate factors from characters, then for factors you want to report the distribution of proportions for each of the levels, and for the characters probably ignore.
@@ -154,45 +154,6 @@ ggplot(title_ratings, aes(x = averageRating, y = numVotes)) +
     x = "Average Title Rating",
     y = "Average number of votes (log10)"
   )
-  # annotate(
-  #   "text", x = 3.5, y = 1e6,
-  #   label = "Scatterplot with log scale on y-axis",
-  #   size = 3, hjust = 0
-  # )
-
-
-# plot2 <- small_title_ratings |>
-#   select(averageRating, numVotes) |>
-#   ggplot(aes(x = averageRating, y = numVotes)) +
-#   stat_bin2d(bins = 60) +
-#   scale_y_log10(labels = label_number()) +
-#   scale_fill_viridis_c(trans = "log10", labels = label_number()) +
-#   labs(
-#     title = "title_ratings: Rating vs votes (binned; log scale)",
-#     x = "Average rating",
-#     y = "Number of votes (log10)",
-#     fill = "Count"
-#   ) +
-#   theme_minimal() +
-#   annotate(
-#     "text", x = 3.5, y = 1e6,
-#     label = "2D binning avoids huge scatterplots",
-#     size = 3, hjust = 0
-#   )
-# plot2
-
-# plot2 <- title_ratings |>
-#   filter(!is.na(averageRating), !is.na(numVotes)) |>
-#   ggplot(aes(x = averageRating, y = numVotes)) +
-#   geom_point(alpha = 0.5) +
-#   geom_smooth(method = "loess", se = FALSE, color = "blue") +
-#   labs(
-#     title = "Average Rating vs Number of Votes",
-#     x = "Average Rating",
-#     y = "Number of Votes"
-#   ) +
-#   theme_minimal()
-
 
 
 
@@ -369,8 +330,109 @@ colnames(genre_cor)[col_index]
 
 * These are large data sets (and yet only a sample of the entire IMDb!), so it make sense spend some time improving our code.
 * Pick one or more of the previous problems and profile the performance of that piece. Write up your findings. If you see any opportunities to improve performance, feel fee to implement than and share the results.
+
+```{r}
+# Profiling character distributions function - this is done in a loop to force it to run longer so that profvis has somehting to analyze
+
+profvis({
+  for (i in 1:50) {
+    char_distributions(title_basics)
+  }
+})
+
+```
+
+
+Running the profvis function on the char_distributions function, we see that the most time is spent in the n.distinct function at 1230 ms. This makes sense because the function needs to look at every value in a character vector to determine how many distinct values there are, and this is done for every character column in the data frame. The next most time consuming step is the count function at 570 ms, which again makes sense because it needs to look at every value in the character column to count the number of occurrences of each distinct value, and this is also done for every character column. 
+
+
 * Select a previous computation that could be improved using parallelization and implement a parallelization solution. Using `system.time` show that parallelization improves performance.
+```{r}
+# Parallelizing the character distributions function 
+# This function does not apply the count() function inside the loop, so it should be faster than the previous version. Also it doesn't use the map function and insteqad uses a for loop. 
+
+char_distributions_fast <- function(df, max_levels = 30, top_n = 15) {
+  chr_names <- names(df)[vapply(df, is.character, logical(1))]
+  if (length(chr_names) == 0) return(list())
+
+  out <- vector("list", length(chr_names))
+  j <- 0
+
+  for (v in chr_names) {
+    x <- df[[v]]
+    n_levels <- n_distinct(x, na.rm = TRUE)
+
+    if (n_levels > 1 && n_levels <= max_levels) {
+      tab <- tibble(value = x) |>
+        count(value, sort = TRUE) |>
+        mutate(p = n / sum(n)) |>
+        slice_head(n = top_n)
+
+      j <- j + 1
+      out[[j]] <- list(var = v, n_levels = n_levels, top = tab)
+    }
+  }
+
+  out[seq_len(j)]
+}
+
+system.time(cd1 <- char_distributions(title_basics))
+system.time(cd2 <- char_distributions_fast(title_basics))
+
+```
+Elapsed time is the best measure of how fast a function runs. In this case, the original version of the char_distributions function takes 0.056 seconds to run, while the parallelized version takes 0.037 seconds to run. This is almost a 70% decrease in time which is significant. 
+
 * One task we performed involved counting items in strings separated by commas. Propose two different functions that could perform this taks. Compare them using bench marking. Which version would you recommend?
+
+```{r}
+# Function: 1 - in the top_genre function we count the number of occurrences of each genre in the genre column, then filter to the top 8 genres, and then pull the genre names. This is looks at the genre column multiple times which is kind of inefficient.
+
+# Original function 
+top_genres <- titles_genres |>
+  count(genre, sort = TRUE) |>
+  slice_head(n = 8) |>
+  pull(genre)
+
+# Improved function - this is faster because it only needs to look at the genre column once because it filters before summarizing
+genre_counts_fast <- titles_genres |>
+  filter(!is.na(startYear), genre %in% top_genres) |>
+  count(startYear, genre, name = "n")   
+
+system.time({
+  top_genres <- titles_genres |> count(genre, sort = TRUE) |> slice_head(n = 8) |> pull(genre)
+})
+
+system.time({
+ genre_counts_fast <- titles_genres |>
+    filter(!is.na(startYear), genre %in% top_genres) |>
+    count(startYear, genre, name = "n")
+})
+
+
+
+# Also, doing the same thing for other functions that perform the same task
+# First function 
+count_split <- function(x) {
+  sapply(strsplit(x, ","), length)
+}
+
+# Second function - this is faster because it uses the str_count package which was programmed specifically for string operations
+count_split_fast <- function(x) {
+  ifelse(is.na(x) | x == "", 0,
+         stringr::str_count(x, ",") + 1)
+}
+
+system.time({
+  counts1 <- count_split(titles_genres$genre)
+})
+
+system.time({
+  counts2 <- count_split_fast(titles_genres$genre)
+})
+```
+From the output we can see that the elapsed time is lower (0.030) for the genres_count_fast function, so I would recommend using it over the original top_genres function (0.038).
+
+Additionally, we can see that the second count_split_fast function is faster with a time elasped of 0.031 as compared to a time elapsed of 0.119 for the original function. This is a significant decrease in time, so I would recommend using the count_split_fast function over the original count_split function.
 
 ## Part VI: Shiny Applications
 
