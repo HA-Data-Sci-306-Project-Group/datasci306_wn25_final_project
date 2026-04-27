@@ -249,24 +249,124 @@ title_basics %>%
   * How many titles are known for name that is different than the original release name?
   
 ```{r}
-title_basics %>%
+x <- title_basics %>%
   select(primaryTitle, originalTitle) %>%
+  filter(originalTitle != primaryTitle) %>%
+  nrow()
+cat(x, " titles are known for a name that is different than the original release name")
 ```
   
   
   * Graph the conditional distributions of release year based on the previous results. Comment on any trends you observe.
+```{r}
+title_basics %>%
+  mutate(title_change = originalTitle != primaryTitle) %>%
+  filter(!is.na(title_change)) %>%
+  ggplot(aes(x = startYear)) +
+  stat_count(aes(y = after_stat(prop), group = 1)) +
+  facet_wrap(~ title_change)
+
+title_basics %>%
+  mutate(
+    title_change = originalTitle != primaryTitle,
+    decade = floor(startYear / 10) * 10
+  ) %>%
+  filter(!is.na(title_change), !is.na(startYear)) %>%
+  count(decade, title_change) %>%
+  group_by(decade) %>%
+  mutate(prop = n / sum(n)) %>%
+  filter(title_change == TRUE) %>%
+  ggplot(aes(x = decade, y = prop)) +
+  geom_col() +
+  scale_y_continuous(labels = scales::percent) +
+  labs(
+    title = "Proportion of Titles with Changed Titles by Decade",
+    x = "Start decade",
+    y = "Percent with changed title"
+  ) +
+  theme_minimal()
+```
+  
+  Based on these plots, it seems that there were spikes in proportions of movies. that had a title change in the late 1800s and early 1900s, in addition to a period between the 1960s and the 1980s. These may coincide with real world events that pushed producers to change movie titles after release.
+  
 * For the ratings, use the `cut` function to break the data into three groups based on the average ratings. Are higher rated titles rated more often or less often than lower rated titles? 
+
+```{r}
+title_ratings %>%
+  mutate(rating_group = cut(averageRating, breaks = 3, labels = c("low", "mediocre", "high"))) %>%
+  group_by(rating_group) %>%
+  summarise(average_votes = mean(numVotes, na.rm = TRUE))
+```
+
+Yes, it seems that on average, higher rated movies have a larger average number of votes compared to lower rated movies (high ~ 1100, mediocre ~ 890, low ~ 340).
+
 * For the names table, 
   * Count the number of titles each person is known for and plot this distribution.
   * investigate the age of cast members
       * Group the data into living and deceased cast members. 
       * For deceased cast members, provide a graph that shows the distribution of ages.
       * Do the same for living cast members.
+      
+```{r}
+name_basics %>%
+  mutate(num_known_for = 1 + str_count(knownForTitles, ",")) %>%
+  mutate(num_known_for = if_else(is.na(num_known_for), 0, num_known_for)) %>%
+  ggplot(aes(x = num_known_for)) +
+  geom_bar()
+
+name_basics2 = name_basics %>%
+  filter(!is.na(birthYear)) %>%
+  mutate(living = is.na(deathYear)) %>%
+  group_by(living)
+
+# Deceased cast members
+name_basics2 %>% 
+  filter(!living) %>%
+  mutate(age = deathYear - birthYear) %>%
+  filter(!(age < 0 & birthYear > 1500)) %>% # Filters out what is likely a mistaken entry
+  mutate(age = if_else(age < 0, -age, age)) %>% # Flips ages for people born before 1 AD.
+  ggplot(aes(x = age)) +
+  geom_histogram(binwidth = 5) +
+  labs(
+    title = "Distribution of age among deceased cast members",
+    x = "Age"
+  )
+
+# Living cast members
+name_basics2 %>% 
+  filter(living) %>%
+  mutate(age = year(today()) - birthYear) %>%
+  filter(age <= 104) %>% # Based on a google search, Ray Anthony is 104 years old and the oldest currently living actor. All other entries that are older are likely simply missing a death year.
+  ggplot(aes(x = age)) +
+  geom_histogram(binwidth = 5) +
+  labs(
+    title = "Distribution of age among living cast members",
+    x = "Age"
+  )
+```
+
+      
 * Find all the actors with first names "Tom", "Thomas", "Thom" or "Tomas". How many are there?
+
+```{r}
+name_basics %>%
+  filter(str_detect(primaryName, "^Tom\\s|^Thomas\\s|^Thom\\s|^Tomas\\s")) %>%
+  nrow()
+```
+
+
 * How many titles use alliteration (i.e., all words in the title start with the same letter)?
 
 ```{r}
-title_basics
+title_basics %>%
+  filter(
+    !is.na(primaryTitle) &
+    str_detect(
+      str_to_lower(primaryTitle),
+      "^\\W*([a-z])\\w*(?:\\W+\\1\\w*)+\\W*$"
+    )
+  ) %>%
+  nrow()
 ```
 
 
@@ -346,30 +446,180 @@ diag(genre_cor) <- NA
 
 # Find max pair
 which(genre_cor == max(genre_cor, na.rm = TRUE), arr.ind = TRUE)
-
-# Indices back to column names
-colnames(genre_cor)[col_index]
 ```
-
+The most common pair of genres are Musical and Film-Noir.
 
 ## Part IV: Joining Tables
 
 * Join the table with one title-genre per row from the previous section with the ratings table.
   * What is the highest rated genre? What is the lowest rated genre?
   * Using stacked bar charts, investigate the proportions of different genres over time. Are any incresing or decreasing? Use factor functions to help make the plots easier to read.
+  
+```{r}
+#head(genre_wide)
+#head(title_ratings)
+
+title_ratings_genre <- inner_join(titles_genres, title_ratings, by = "tconst")
+genre_ratings <- title_ratings_genre %>%
+  group_by(genre) %>%
+  summarise(mean_rating = mean(averageRating, na.rm = TRUE))
+
+genre_ratings %>%
+  arrange(mean_rating)
+
+genre_ratings %>%
+  arrange(desc(mean_rating))
+
+title_ratings_genre %>%
+  group_by(genre) %>%
+  ggplot(aes(x = factor(startYear), fill = factor(genre))) +
+  geom_bar(position = "fill")
+
+title_ratings_genre %>%
+  group_by(genre) %>%
+  ggplot(aes(x = 10*floor(startYear/10), fill = factor(genre))) +
+  geom_bar(position = "fill") +
+  labs(
+    title = "Proportion of Genres by Decade",
+    x = "Start decade",
+    y = "Proportion"
+  )
+```
+  History is the highest rated genre on average with a mean rating of 7.33. Horror is the lowest rated genre on average, with a mean rating of 6.16
+  Based on trends seen in the graph, the proportion of short films has significantly decreased significantly over time since the early 1900s, while the proportion of drama films has significantly. Genres such as comedy and action also seemed to grow since the early 1900s.
+  
 * Join the `title_basics` with the ratings table. Have the number of ratings changed over time (based on release year)? Display graphically but also answer with numerical results.
+
+```{r}
+title_ratings_basics <- inner_join(title_basics, title_ratings, by = "tconst")
+temp <- title_ratings_basics %>%
+  filter(!is.na(startYear)) %>%
+  group_by(startYear) %>%
+  summarise(mean_numVotes = mean(numVotes, na.rm = TRUE))
+temp %>%
+  arrange(desc(mean_numVotes))
+temp %>%
+  ggplot(aes(x = startYear, y = mean_numVotes)) +
+  geom_line() +
+  labs(
+    title = "Average Number of Votes/Ratings by Release Year",
+    x = "Release Year",
+    y = "Average Number of Votes"
+  ) +
+  theme_minimal()
+
+```
+
+
 * Join the names with the ratings and the principals table. 
   * Group by individual people, find the top ten people based on the median rating of the titles they appear in.
   * Find the proportions of genres for the the titles that include the top 10 rated principals.
   * Graph ratings against years. What trends do you see?
+  
+```{r}
+title_principals_ratings <- inner_join(title_principals, title_ratings_basics, by = "tconst") %>%
+  inner_join(name_basics, by = "nconst")
+```
+
+  
+```{r}
+top_principals <- title_principals_ratings %>%
+  group_by(primaryName) %>%
+  summarise(median_rating = median(averageRating, na.rm = TRUE)) %>%
+  arrange(desc(median_rating)) %>%
+  slice_head(n = 10) %>%
+  pull(primaryName)
+
+top_principals
+
+title_principals_ratings %>%
+  filter(primaryName %in% top_principals) %>%
+  distinct(tconst, primaryTitle, genres) %>%   # avoids double-counting the same title
+  separate_rows(genres, sep = ",") %>%
+  count(genres) %>%
+  mutate(prop = n / sum(n)) %>%
+  arrange(desc(prop))
+
+title_principals_ratings %>%
+  filter(primaryName %in% top_principals) %>%
+  ggplot(aes(x = startYear, y = averageRating)) +
+  geom_point() +
+  labs(
+    title = "Ratings of Titles Featuring Top 10 Rated Principals Over Time",
+    x = "Release Year",
+    y = "Average Rating",
+    color = "Name"
+  )
+
+rating_year <- title_basics %>%
+  inner_join(title_ratings)
+
+rating_year %>%
+  group_by(startYear) %>%
+  summarise(mean_Rating = mean(averageRating, na.rm = TRUE)) %>%
+  ggplot(aes(x = startYear, y = mean_Rating)) +
+  geom_col() +
+  labs(
+    title = "Ratings of Titles Over Time",
+    x = "Release Year",
+    y = "Average Rating"
+  )
+```
+  Average ratings seemed to increase fairly steadily over time since the late 1800s.
+  
 * Create a table with one row for each person in the `name_basics` table and title they are known for. Join this to the ratings table to get the ratings of the "known for" films. Find the person (or people) who have the highest median known for rating.
-* 
+
+```{r}
+name_known_for <- name_basics %>%
+  select(nconst, primaryName, knownForTitles) %>%
+  filter(!is.na(knownForTitles)) %>%
+  separate_rows(knownForTitles, sep = ",") %>%
+  rename(tconst = knownForTitles)
+name_known_for_ratings <- name_known_for %>%
+  inner_join(title_ratings, by = "tconst")
+```
+```{r}
+name_known_for_ratings %>%
+  group_by(primaryName) %>%
+  summarise(median_rating = median(averageRating, na.rm = TRUE)) %>%
+  arrange(desc(median_rating)) %>%
+  slice_head(n = 10)
+```
+
+
+
 
 ## Part V: Profiling and Parallel Processing
 
 * These are large data sets (and yet only a sample of the entire IMDb!), so it make sense spend some time improving our code.
 * Pick one or more of the previous problems and profile the performance of that piece. Write up your findings. If you see any opportunities to improve performance, feel fee to implement than and share the results.
+
+```{r}
+# Example of profiling code for the genre correlation code from Part III.
+
+library(profvis)
+profvis({
+  genre_matrix <- model.matrix(~ genre - 1, data = titles_genres)
+  genre_cor <- cor(genre_matrix)
+})
+
+bench::mark(
+  cor_genre_matrix = cor(genre_matrix),
+  cor_genre_wide = cor(genre_wide %>% select(-tconst)),
+  check = FALSE
+)
+```
+
+Most of the time is spent on the `cor` function, which is not surprising given that it is doing a large number of calculations. The `model.matrix` function is very fast in comparison. The correlation calculation is faster when we use the wide format table, likely because it has fewer rows (one per title instead of one per title-genre combination).
+
 * Select a previous computation that could be improved using parallelization and implement a parallelization solution. Using `system.time` show that parallelization improves performance.
+
+```{r}
+# I can't seem to figure this one out, none of the ones I tried to parallelize worked faster than serial.
+
+```
+
+
 * One task we performed involved counting items in strings separated by commas. Propose two different functions that could perform this taks. Compare them using bench marking. Which version would you recommend?
 
 ## Part VI: Shiny Applications
@@ -378,9 +628,19 @@ colnames(genre_cor)[col_index]
 
 Using results from the previous section, create a shiny application that allows users to interact with the with the IMDb data. The application should use both interactive graphs and at least 3 widgets.
 
+```{r}
+# app.R contians all of this
+```
+
+
 ### Application 2
 
 In the principals table, there is a `category` column. Use this column as a primary filter to allow users to then select specific job categories. After select the specific job categories, display information from another table.
+
+```{r}
+# app2 contains all of this data
+```
+
 
 ## Extra Credit: 6 Degrees of Kevin Bacon
 
