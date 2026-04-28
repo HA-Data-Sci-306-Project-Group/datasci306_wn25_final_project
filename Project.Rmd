@@ -337,18 +337,6 @@ title_basics %>%
 ```{r}
 # Create a new version of the titles_basics table with one row per title-genre combination
   
-# R crashes when I try to run this code.
-
-# tb_genres_tall <- title_basics |>
-#   select(tconst, primaryTitle, startYear, genres) %>%
-#   filter(!is.na(genres), genres != "") %>%
-#   separate_rows(genres, sep = ",") %>%
-#   rename(genre = genres) %>%
-#   mutate(
-#     genre = str_trim(genre),
-#     startYear = as.integer(startYear)
-#   ) %>%
-#   filter(!is.na(genre), genre != "", !is.na(startYear))
 
 titles_genres <- title_basics %>%
   filter(!is.na(genres)) %>%
